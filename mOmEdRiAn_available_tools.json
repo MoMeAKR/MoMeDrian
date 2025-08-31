@@ -1,0 +1,18 @@
+{
+    "crop": {
+        "function": "crop_stage"
+    }, 
+    "add_text": {
+        "function": "add_text"
+    }, 
+    "blur": {
+        "function": "soft_focus_blur"
+    },
+    "overlay": {
+        "function": "overlay_stage"
+    },
+    "fallback": {
+        "function": "pass_through"
+    }
+    
+}

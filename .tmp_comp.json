@@ -1,0 +1,10 @@
+[
+    {
+        "type": "image",
+        "path": "/home/mehdimounsif/obsidian/leads/test_0_interm/IMG_2185.JPG"
+    },
+    {
+        "type": "blur",
+        "blur_radius": 45.0
+    }
+]
