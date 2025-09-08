@@ -11,8 +11,15 @@
     "overlay": {
         "function": "overlay_stage"
     },
+    "gemini_image":
+    {
+        "function": "get_gemini_image"
+    },
     "fallback": {
         "function": "pass_through"
+    },
+    "blur_outside": {
+        "function": "soft_focus_blur_outside_rect"
     }
     
 }

@@ -9,6 +9,18 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import os
 import glob
 import random
+import hashlib
+import pickle
+
+def _hash_content(content) -> str:
+    """Return a stable hash for node_content (using pickle + sha256)."""
+    try:
+        data = pickle.dumps(content)
+    except Exception:
+        # fallback: str representation
+        data = str(content).encode("utf-8")
+    return hashlib.sha256(data).hexdigest()[:50]
+
 
 def get_random_font(base_path=None):
     if base_path is None:
@@ -268,41 +280,6 @@ def vhs_scanline(params, current_inputs):
         "line_spacing": line_spacing
     }
 
-# def vhs_grain(params, current_image):
-#     """
-#     Adds VHS-style noise/grain to the input image.
-
-#     Args:
-#         current_image (PIL.Image.Image): The input image.
-#         intensity (float): Noise intensity (0.0 to 1.0, default: 0.2).
-#         colored (bool): If True, use colored noise; otherwise, grayscale noise.
-
-#     Returns:
-#         PIL.Image.Image: The image with noise/grain applied.
-#     """
-
-#     intensity = params.get("intensity", 0.2)
-#     colored = params.get("colored", True)
-
-#     # Convert image to numpy array
-#     img = np.array(current_image).astype(np.float32)
-#     h, w = img.shape[:2]
-
-#     # Generate noise
-#     if colored and img.ndim == 3:
-#         noise = np.random.randn(h, w, img.shape[-1]) * 255 * intensity
-#     else:
-#         noise = np.random.randn(h, w, 1) * 255 * intensity
-#         if img.ndim == 3:
-#             noise = np.repeat(noise, img.shape[-1], axis=2)
-
-#     # Add noise and clip to valid range
-#     noisy_img = img + noise
-#     noisy_img = np.clip(noisy_img, 0, 255).astype(np.uint8)
-
-#     # Convert back to PIL Image
-#     return Image.fromarray(noisy_img)
-
 def vhs_grain(params, current_inputs):
     """
     Adds VHS-style noise/grain to the input image.
@@ -341,29 +318,6 @@ def vhs_grain(params, current_inputs):
     # Convert back to PIL Image
     return Image.fromarray(noisy_img), {"intensity": intensity, "colored": colored}
 
-def soft_focus_blur(params, current_image):
-    """
-    Applies a soft focus and blur effect to the input image.
-    
-    Args:
-        params (dict): Dictionary with optional keys:
-            - 'blur_radius' (float): The radius for Gaussian blur. Default is 4.0.
-            - 'blend_alpha' (float): Blend strength between original and blurred image (0-1). Default is 0.6.
-        current_image (PIL.Image.Image): The input image.
-        
-    Returns:
-        PIL.Image.Image: The image with soft focus and blur effect applied.
-    """
-    blur_radius = params.get('blur_radius', 4.0)
-    blend_alpha = params.get('blend_alpha', 0.6)
-    
-    # Apply Gaussian blur
-    blurred = current_image.filter(ImageFilter.GaussianBlur(blur_radius))
-    
-    # Blend the original and blurred images
-    soft_focus = Image.blend(current_image, blurred, blend_alpha)
-    
-    return soft_focus
 
 
 def soft_focus_blur(params, current_inputs):
@@ -379,17 +333,119 @@ def soft_focus_blur(params, current_inputs):
     Returns:
         PIL.Image.Image: The image with soft focus and blur effect applied.
     """
+
     blur_radius = params.get('blur_radius', 4.0)
     blend_alpha = params.get('blend_alpha', 0.6)
     
     current_image = current_inputs[0]['image']
     # Apply Gaussian blur
     blurred = current_image.filter(ImageFilter.GaussianBlur(blur_radius))
+
     
     # Blend the original and blurred images
     soft_focus = Image.blend(current_image, blurred, blend_alpha)
     
     return soft_focus, {"blur_radius": blur_radius, "blend_alpha": blend_alpha}
+
+
+def soft_focus_blur_outside_rect(params, current_inputs):
+    """
+    Applies a soft focus and blur effect to the input image, but only outside a specified rectangle.
+    Optionally draws a border around the rectangle. Rectangle is specified as (x, y, w, h), where
+    values can be absolute (int) or relative (float in [0,1]). Accepts rect as list or tuple.
+
+    Args:
+        params (dict): Dictionary with optional keys:
+            - 'blur_radius' (float): The radius for Gaussian blur. Default is 4.0.
+            - 'blend_alpha' (float): Blend strength between original and blurred image (0-1). Default is 0.6.
+            - 'rect' (list or tuple): [x, y, w, h] of rectangle. If any value is float, it's relative.
+            - 'rect_border_width' (int): Width of the border in pixels. Default is 0 (no border).
+            - 'rect_border_color' (tuple): RGB color of the border. Default is (255, 255, 255).
+        current_inputs (list): List of dicts (with keys 'id', 'image', 'meta') containing parents data
+
+    Returns:
+        PIL.Image.Image: The image with soft focus and blur effect applied outside the rectangle, with optional border.
+        dict: Parameters used.
+    """
+    blur_radius = params.get('blur_radius', 4.0)
+    blend_alpha = params.get('blend_alpha', 0.6)
+    rect_border_width = params.get('rect_border_width', 0)
+    rect_border_color = params.get('rect_border_color', (255, 255, 255))
+    current_image = current_inputs[0]['image']
+
+    w_img, h_img = current_image.size
+    # Default rectangle: center 50% of image
+    default_rect = [w_img // 4, h_img // 4, w_img // 2, h_img // 2]
+    rect = params.get('rect', default_rect)
+    rect = list(rect)  # Ensure it's a list for mutability
+
+    # Convert relative rect coordinates to absolute if needed
+    def to_abs(val, maxval):
+        if isinstance(val, float) and 0.0 <= val <= 1.0:
+            return int(round(val * maxval))
+        return int(val)
+
+    if any(isinstance(v, float) and 0.0 <= v <= 1.0 for v in rect):
+        x = to_abs(rect[0], w_img)
+        y = to_abs(rect[1], h_img)
+        w = to_abs(rect[2], w_img)
+        h = to_abs(rect[3], h_img)
+    else:
+        x, y, w, h = (int(v) for v in rect)
+
+    # Clamp rectangle to image bounds
+    x1 = max(0, x)
+    y1 = max(0, y)
+    x2 = min(w_img, x + w)
+    y2 = min(h_img, y + h)
+    abs_rect = (x1, y1, x2, y2)
+
+    # Apply Gaussian blur to the whole image
+    blurred = current_image.filter(ImageFilter.GaussianBlur(blur_radius))
+    # Blend the original and blurred images
+    soft_focus = Image.blend(current_image, blurred, blend_alpha)
+
+    # Create a mask: white inside rect, black outside
+    mask = Image.new("L", current_image.size, 0)
+    draw = ImageDraw.Draw(mask)
+    draw.rectangle(abs_rect, fill=255)
+
+    # Composite: inside rect is original, outside is soft_focus
+    result = Image.composite(current_image, soft_focus, mask)
+
+    # Draw border if requested
+    if rect_border_width > 0:
+        # Draw border on a transparent layer and composite over result
+        border_layer = Image.new("RGBA", result.size, (0, 0, 0, 0))
+        border_draw = ImageDraw.Draw(border_layer)
+        # Shrink rectangle by half the border width to keep border inside image
+        shrink = rect_border_width // 2
+        border_rect = (
+            max(x1 + shrink, 0),
+            max(y1 + shrink, 0),
+            min(x2 - shrink, w_img - 1),
+            min(y2 - shrink, h_img - 1)
+        )
+        # Ensure color is RGBA
+        border_color_rgba = tuple(rect_border_color) + (255,)
+        border_draw.rectangle(
+            border_rect,
+            outline=border_color_rgba,
+            width=rect_border_width
+        )
+        # Convert result to RGBA if not already
+        if result.mode != "RGBA":
+            result = result.convert("RGBA")
+        result = Image.alpha_composite(result, border_layer).convert(current_image.mode)
+
+    return result, {
+        "blur_radius": blur_radius,
+        "blend_alpha": blend_alpha,
+        "rect": rect,
+        "rect_abs": abs_rect,
+        "rect_border_width": rect_border_width,
+        "rect_border_color": rect_border_color
+    }
 
 
 
@@ -461,201 +517,90 @@ def pass_through(stage, current_inputs):
 
 def crop_stage(stage, current_inputs):
     """
-    Crops the current image to the specified box.
+    Crops the current image to the specified box, supporting both absolute and relative coordinates.
 
     Args:
-        stage (dict): Should contain:
-            - 'box': (left, upper, right, lower) tuple, or
-            - 'left', 'upper', 'right', 'lower': coordinates
+        stage (dict): May contain:
+            - 'box': (left, upper, right, lower) tuple (absolute or relative floats)
+            - 'left', 'upper', 'right', 'lower': coordinates (absolute or relative floats)
+            - 'from_top', 'from_bottom', 'from_left', 'from_right': crop distances (absolute or relative floats)
         current_inputs (list): List of dicts (with keys 'id', 'image', 'meta') containing parents data
 
     Returns:
         PIL.Image.Image: The cropped image.
         dict: Metadata about the crop box used.
     """
-    # Get the image from the first input
     current_image = current_inputs[0]['image']
+    width, height = current_image.width, current_image.height
 
-    # Determine the crop box
-    box = stage.get('box')
-    if box is None:
-        left = stage.get('left', 0)
-        upper = stage.get('upper', 0)
-        right = stage.get('right', current_image.width)
-        lower = stage.get('lower', current_image.height)
+    def resolve(val, maxval):
+        """Convert relative (float) or absolute (int) coordinate to absolute pixel value."""
+        if isinstance(val, float):
+            return int(round(val * maxval))
+        return int(val)
+
+    # Priority: from_* controls > box > individual sides
+    if any(k in stage for k in ['from_top', 'from_bottom', 'from_left', 'from_right']):
+        from_top = resolve(stage.get('from_top', 0), height)
+        from_bottom = resolve(stage.get('from_bottom', 0), height)
+        from_left = resolve(stage.get('from_left', 0), width)
+        from_right = resolve(stage.get('from_right', 0), width)
+        left = from_left
+        upper = from_top
+        right = width - from_right
+        lower = height - from_bottom
+        box = (left, upper, right, lower)
+    elif 'box' in stage:
+        # box can be absolute or relative
+        box = stage['box']
+        box = tuple(
+            resolve(val, width if i % 2 == 0 else height)
+            for i, val in enumerate(box)
+        )
+    else:
+        left = resolve(stage.get('left', 0), width)
+        upper = resolve(stage.get('upper', 0), height)
+        right = resolve(stage.get('right', width), width)
+        lower = resolve(stage.get('lower', height), height)
         box = (left, upper, right, lower)
 
-    # Crop the image
+    # Ensure box is within image bounds
+    box = (
+        max(0, min(box[0], width)),
+        max(0, min(box[1], height)),
+        max(0, min(box[2], width)),
+        max(0, min(box[3], height)),
+    )
+
     cropped = current_image.crop(box)
     return cropped, {"box": box}
 
 
-# def overlay_stage(stage, current_image):
-#     """
-#     Overlays another image onto the current image.
-
-#     Args:
-#         stage (dict): Should contain:
-#             - 'overlay_path': path to the overlay image (optional if 'overlay_pil' is provided)
-#             - 'overlay_pil': PIL.Image.Image object to use as overlay (optional)
-#             - 'position': (x, y) tuple for top-left corner, or string: 'center', 'bottom-right', etc. (default: (0, 0))
-#             - 'relative_position': (x_frac, y_frac) tuple, each in [0, 1], for relative placement
-#             - 'alpha': float in [0, 1] for overlay opacity (optional)
-#             - 'resize': (width, height) tuple to resize overlay (optional)
-#         current_image (PIL.Image.Image): The base image.
-
-#     Returns:
-#         PIL.Image.Image: The image with overlay applied.
-#     """
-#     overlay_pil = stage.get("overlay_pil", None)
-#     overlay_path = stage.get('overlay_path', None)
-#     position = stage.get('position', None)
-#     relative_position = stage.get('relative_position', None)
-#     alpha = stage.get('alpha', None)
-#     resize = stage.get('resize', None)
-
-#     # Ensure we have an overlay image
-#     if overlay_pil is not None:
-#         overlay = overlay_pil.copy()
-#     elif overlay_path is not None:
-#         overlay = Image.open(overlay_path).convert("RGBA")
-#     else:
-#         raise ValueError("Either 'overlay_pil' or 'overlay_path' must be provided in stage.")
-
-#     # Optionally resize the overlay
-#     if resize:
-#         overlay = overlay.resize(resize, Image.LANCZOS)
-
-#     # Optionally adjust overlay alpha
-#     if alpha is not None:
-#         overlay = overlay.copy()
-#         alpha_mask = overlay.split()[-1].point(lambda p: int(p * alpha))
-#         overlay.putalpha(alpha_mask)
-
-#     base_w, base_h = current_image.size
-#     ovl_w, ovl_h = overlay.size
-
-#     # Determine position
-#     if position is not None:
-#         # Accept tuple or string
-#         if isinstance(position, str):
-#             if position == "center":
-#                 position = ((base_w - ovl_w) // 2, (base_h - ovl_h) // 2)
-#             elif position == "bottom-right":
-#                 position = (base_w - ovl_w, base_h - ovl_h)
-#             elif position == "top-right":
-#                 position = (base_w - ovl_w, 0)
-#             elif position == "bottom-left":
-#                 position = (0, base_h - ovl_h)
-#             elif position == "top-left":
-#                 position = (0, 0)
-#             else:
-#                 position = (0, 0)
-#         # else: assume tuple of ints
-#     elif relative_position is not None:
-#         # relative_position: (x_frac, y_frac) in [0, 1]
-#         x_frac, y_frac = relative_position
-#         x = int(x_frac * (base_w - ovl_w))
-#         y = int(y_frac * (base_h - ovl_h))
-#         position = (x, y)
-#     else:
-#         position = (0, 0)
-
-#     # Ensure current_image is RGBA
-#     base = current_image.convert("RGBA")
-#     composite = base.copy()
-#     composite.paste(overlay, position, mask=overlay)
-#     return composite
+def get_gemini_image(stage, current_inputs): 
 
 
-# def overlay_stage(stage, current_inputs):
-#     """
-#     Overlays another image onto the current image.
+    # make tmp_images
+    im_paths = []
+    for i, ci in enumerate(current_inputs): 
+        current_im = ci['image']
 
-#     Args:
-#         stage (dict): Should contain:
-#             - 'overlay_path': path to the overlay image (optional if 'overlay_pil' is provided)
-#             - 'overlay_pil': PIL.Image.Image object to use as overlay (optional)
-#             - 'position': (x, y) tuple for top-left corner, or string: 'center', 'bottom-right', etc. (default: (0, 0))
-#             - 'relative_position': (x_frac, y_frac) tuple, each in [0, 1], for relative placement
-#             - 'alpha': float in [0, 1] for overlay opacity (optional)
-#             - 'resize': (width, height) tuple to resize overlay (optional)
-#         current_inputs (list): List of dicts (with keys 'id', 'image', 'meta') containing parents data
-
-#     Returns:
-#         PIL.Image.Image: The image with overlay applied.
-#         dict: Metadata about the overlay operation.
-#     """
-#     # Extract the base image from the first parent
-#     current_image = current_inputs[0]['image']
-
-#     overlay_pil = stage.get("overlay_pil", None)
-#     overlay_path = stage.get('overlay_path', None)
-#     position = stage.get('position', None)
-#     relative_position = stage.get('relative_position', None)
-#     alpha = stage.get('alpha', None)
-#     resize = stage.get('resize', None)
-
-#     # Ensure we have an overlay image
-#     if overlay_pil is not None:
-#         overlay = overlay_pil.copy()
-#     elif overlay_path is not None:
-#         overlay = Image.open(overlay_path).convert("RGBA")
-#     else:
-#         raise ValueError("Either 'overlay_pil' or 'overlay_path' must be provided in stage.")
-
-#     # Optionally resize the overlay
-#     if resize:
-#         overlay = overlay.resize(resize, Image.LANCZOS)
-
-#     # Optionally adjust overlay alpha
-#     if alpha is not None:
-#         overlay = overlay.copy()
-#         alpha_mask = overlay.split()[-1].point(lambda p: int(p * alpha))
-#         overlay.putalpha(alpha_mask)
-
-#     base_w, base_h = current_image.size
-#     ovl_w, ovl_h = overlay.size
-
-#     # Determine position
-#     if position is not None:
-#         if isinstance(position, str):
-#             if position == "center":
-#                 position = ((base_w - ovl_w) // 2, (base_h - ovl_h) // 2)
-#             elif position == "bottom-right":
-#                 position = (base_w - ovl_w, base_h - ovl_h)
-#             elif position == "top-right":
-#                 position = (base_w - ovl_w, 0)
-#             elif position == "bottom-left":
-#                 position = (0, base_h - ovl_h)
-#             elif position == "top-left":
-#                 position = (0, 0)
-#             else:
-#                 position = (0, 0)
-#         # else: assume tuple of ints
-#     elif relative_position is not None:
-#         # relative_position: (x_frac, y_frac) in [0, 1]
-#         x_frac, y_frac = relative_position
-#         x = int(x_frac * (base_w - ovl_w))
-#         y = int(y_frac * (base_h - ovl_h))
-#         position = (x, y)
-#     else:
-#         position = (0, 0)
-
-#     # Ensure current_image is RGBA
-#     base = current_image.convert("RGBA")
-#     composite = base.copy()
-#     composite.paste(overlay, position, mask=overlay)
-
-#     # Optionally return metadata
-#     meta = {
-#         "overlay_path": overlay_path,
-#         "position": position,
-#         "relative_position": relative_position,
-#         "alpha": alpha,
-#         "resize": resize
-#     }
-#     return composite, meta
+        p = os.path.join("/tmp", "im_{}.png".format(i))
+        # Resize image if larger than 1024px in either dimension
+        max_dim = 1024
+        w, h = current_im.size
+        if max(w, h) > max_dim:
+            scale = max_dim / max(w, h)
+            new_size = (int(w * scale), int(h * scale))
+            current_im = current_im.resize(new_size, Image.LANCZOS)
+        current_im.save(p)
+        im_paths.append(p)
+    
+    prompt = stage['prompt']   
+    generated_path = momeutils.make_gemini_image(prompt, im_paths)
+    for im_path in im_paths: 
+        os.remove(im_path)
+    # generated_path = "/home/mehdimounsif/Images/generated/last_image.png"
+    return Image.open(generated_path)   , {"prompt": prompt}
 
 
 
@@ -755,7 +700,6 @@ def overlay_stage(stage, current_inputs):
 
 
 
-
 def compose(stages, base_image=None):
     """
     Compose an image from a list of stage dicts.
@@ -794,39 +738,19 @@ def compose(stages, base_image=None):
     return current_image
 
 
-
-def compose(source_folder, G, outputs = None, base_image = None):
+def compose(source_folder, G, outputs=None, base_image=None, cache=None, invalidate=True):
     """
-    Execute a composition DAG where each node has a 'node_content' attribute.
-    This dispatcher is intentionally minimal: it only orchestrates the graph execution
-    and delegates node computation to `execute_node`, which you will implement.
+    Incremental DAG execution with caching and content-hash validation.
 
-    Contract:
-    - inputs is ordered deterministically by parent id (str-collation).
-    - Each input item has:
-        - "id": the parent node id
-        - "image": the parent's produced image
-        - "meta": a dict of metadata from the parent (can be empty)
-    - execute_node must return a (image, meta) tuple. meta must be a dict (use {} if none).
-
-    Args:
-        G: networkx.DiGraph representing the composition DAG. Must be acyclic for topological execution.
-           Each node must carry a 'node_content' attribute.
-        outputs: Optional iterable of node ids to render. If None, all sink nodes (no successors) will be rendered.
-        base_image: Optional fallback image that execute_node may use for nodes that require an image but have no parents.
-
-    Returns:
-        - If a single output is resolved, returns the PIL.Image for that output.
-        - If multiple outputs, returns a dict {node_id: PIL.Image} for the requested outputs.
-
-    Raises:
-        TypeError: if G is not a nx.DiGraph.
-        KeyError: if a requested output is not in the graph, or a node lacks 'node_content'.
-        networkx.NetworkXUnfeasible: if the graph has cycles.
-        ValueError: if no sink outputs can be determined when outputs is None.
+    Cache structure:
+        cache[node_id] = (image, meta, content_hash)
     """
+
     if not isinstance(G, nx.DiGraph):
         raise TypeError("compose expects a networkx.DiGraph")
+
+    if cache is None:
+        cache = {}
 
     # Resolve targets
     if outputs is None:
@@ -839,19 +763,24 @@ def compose(source_folder, G, outputs = None, base_image = None):
         if missing:
             raise KeyError(f"Requested output nodes not present in the graph: {missing}")
 
-    # Induced subgraph: targets + all their ancestors
+    # Induced subgraph (only what we need for targets)
     required_nodes: set = set()
     for out in target_nodes:
         required_nodes.add(out)
         required_nodes.update(nx.ancestors(G, out))
     H = G.subgraph(required_nodes).copy()
 
-    # Topological order to ensure parents compute before children
+    # --- Invalidate nodes outside required subgraph ---
+    if invalidate:
+        for nid in list(cache.keys()):
+            if nid not in H.nodes:
+                print('Removing from cache,', nid)
+                cache.pop(nid, None)
+
+    # Topological order
     topo = list(nx.topological_sort(H))
 
-    # Cache results: node_id -> (image, meta)
-    results = {}
-
+    # --- Core execution ---
     for n in topo:
         node_attrs = H.nodes[n]
         if "node_content" not in node_attrs:
@@ -859,31 +788,55 @@ def compose(source_folder, G, outputs = None, base_image = None):
 
         node_content = node_attrs["node_content"]
 
-        # Build inputs from parents in deterministic order
+
+        print("node_content before hash: {}".format(node_content))
+        # cleaning node_content for hash by only selecting structured data 
+        try: 
+            node_content_for_hash = momeutils.parse_json(node_content)
+        except Exception as e: 
+            node_content_for_hash = node_content
+        print("node_content for hash: {}".format(node_content_for_hash))
+
+        content_hash = _hash_content(node_content_for_hash)
+
+        # Reuse only if cached content matches
+        if n in cache and cache[n][2] == content_hash:
+            print('Skipping node ', n)
+            continue
+        else: 
+            if n in cache: 
+                print(node_content)
+                print('Content hash problem', n, content_hash, cache[n][2])
+                # input(' ok ? ')
+            momeutils.crline(f'Computation to run for node {n}')
+
+        # Build inputs
         parent_ids = sorted(H.predecessors(n), key=lambda x: str(x))
         inputs = [
-            {"id": pid, "image": results[pid][0], "meta": results[pid][1]}
+            {"id": pid, "image": cache[pid][0], "meta": cache[pid][1]}
             for pid in parent_ids
         ]
 
-        # Delegate to your implementation
+        # Execute node
         image, meta = execute_node(source_folder, n, node_content, inputs, base_image)
-
         if meta is None:
             meta = {}
         elif not isinstance(meta, dict):
             raise TypeError(f"execute_node must return a dict for meta; got {type(meta)} at node {n!r}.")
 
-        results[n] = (image, meta)
+        cache[n] = (image, meta, content_hash)
 
     # Collect outputs
     final_nodes = list(target_nodes) if outputs is not None else [n for n in H.nodes if H.out_degree(n) == 0]
-    # if len(final_nodes) == 1:
-    #     return results[final_nodes[0]][0]
-    return {nid: results[nid][0] for nid in final_nodes}
+    result = {nid: cache[nid][0] for nid in final_nodes}
+
+
+    return result, cache
+
+
 
 def execute_node(source_folder, node_id, node_contents, current_inputs, base_image = None): 
-    momeutils.crline('HERE for exec')
+    
  
     data = {}
     data = momeutils.outer_parse_generic(node_contents) 
@@ -900,6 +853,7 @@ def execute_node(source_folder, node_id, node_contents, current_inputs, base_ima
     
     else: 
         processing_func = available_tools.get(data.get('type', 'fallback'), 'fallback')['function']
+        momeutils.crline(f'Processing func for {node_id}: {processing_func}')
         func = getattr(sys.modules[__name__], processing_func)
         img, meta = func(data, current_inputs)
     
@@ -936,8 +890,17 @@ def produce_composition(data_path, selected_ids):
     data = json.load(open(data_path))
     graph =  hub_utils.make_graph_from_canva(data)
     img_source_folder = os.path.join(os.path.dirname(data_path), os.path.basename(data_path).split('.')[0] + "_interm")
-    results = compose(img_source_folder, graph, selected_ids)
+    cached = {}
+    cache_path = os.path.join(os.path.dirname(__file__), "current_cache.pkl")
+    if os.path.exists(cache_path): 
+        with open(cache_path, "rb") as f:
+            cached = pickle.load(f)
+    
+
+    results, cached = compose(img_source_folder, graph, selected_ids, cache= cached)
     print(results)
+    with open(cache_path, "wb") as f:
+        pickle.dump(cached, f)
 
     for k in results.keys(): 
         final_path = os.path.join(img_source_folder, f"interm_{k}.png")

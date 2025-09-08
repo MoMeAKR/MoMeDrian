@@ -13,7 +13,7 @@ CORS(app)  # Allow requests from Obsidian
 def receive_canvas_path():
 
 
-    try:
+    # try:
         data = request.get_json()
         canvas_path = data.get('canvas_path')
         selected_ids = data.get('selected_node_ids')
@@ -32,9 +32,9 @@ def receive_canvas_path():
             'status': 'success'
         })
     
-    except Exception as e:
-        print(f"Error processing request: {e}")
-        return jsonify({'error': str(e)}), 500
+    # except Exception as e:
+    #     print(f"Error processing request: {e}")
+    #     return jsonify({'error': str(e)}), 500
 
 
 @app.route('/health', methods=['GET'])
