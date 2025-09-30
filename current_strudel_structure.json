@@ -1,0 +1,252 @@
+{
+    "drums": [
+        {
+            "note": [
+                "bd",
+                "rim"
+            ],
+            "effects": {
+                "delay": 0.5,
+                "gain": 0.85
+            }
+        },
+        {
+            "cycle": [
+                {
+                    "note": "hh"
+                },
+                {
+                    "note": "hh"
+                },
+                {
+                    "note": "hh"
+                },
+                {
+                    "note": "hh"
+                }
+            ],
+            "multiplier": "*4",
+            "effects": {
+                "gain": 0.6
+            }
+        },
+        {
+            "brackets": [
+                {
+                    "note": "sd"
+                },
+                {
+                    "note": "sd"
+                },
+                {
+                    "note": "sd"
+                }
+            ],
+            "multiplier": "/2",
+            "effects": {
+                "reverb": 0.3
+            }
+        },
+        {
+            "parallel": [
+                {
+                    "cycle": [
+                        "bd",
+                        "~"
+                    ],
+                    "multiplier": "*2"
+                },
+                {
+                    "cycle": [
+                        "hh",
+                        "hh"
+                    ],
+                    "multiplier": "*4"
+                }
+            ],
+            "effects": {
+                "room": 1.2,
+                "gain": 0.7
+            }
+        },
+        {
+            "cycle": [
+                {
+                    "brackets": [
+                        {
+                            "note": "bd"
+                        },
+                        {
+                            "note": "sd"
+                        },
+                        {
+                            "parallel": [
+                                {
+                                    "note": "hh"
+                                },
+                                {
+                                    "note": "oh"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "note": "~"
+                },
+                {
+                    "cycle": [
+                        "rim",
+                        "rim",
+                        "~"
+                    ]
+                }
+            ],
+            "multiplier": "!2",
+            "effects": {
+                "delay": 0.25,
+                "gain": 0.9
+            }
+        }
+    ],
+    "melody": [
+        {
+            "brackets": [
+                {
+                    "note": [
+                        "4"
+                    ]
+                },
+                {
+                    "cycle": [
+                        "3@3",
+                        "4"
+                    ]
+                },
+                {
+                    "cycle": [
+                        {
+                            "brackets": [
+                                {
+                                    "note": 2
+                                },
+                                {
+                                    "note": 0
+                                }
+                            ]
+                        },
+                        {
+                            "note": [
+                                "~@16"
+                            ]
+                        },
+                        {
+                            "note": "~"
+                        }
+                    ]
+                }
+            ],
+            "scale": "D4:minor",
+            "instrument": "gm_accordion:2",
+            "effects": {
+                "room": 2,
+                "gain": 0.4
+            }
+        },
+        {
+            "cycle": [
+                {
+                    "note": "0"
+                },
+                {
+                    "cycle": [
+                        "~",
+                        "0"
+                    ]
+                },
+                {
+                    "note": "4"
+                },
+                {
+                    "cycle": [
+                        "3",
+                        "2"
+                    ]
+                },
+                {
+                    "cycle": [
+                        "0",
+                        "~"
+                    ]
+                },
+                {
+                    "cycle": [
+                        "0",
+                        "~"
+                    ]
+                },
+                {
+                    "brackets": [
+                        "0",
+                        "2"
+                    ]
+                },
+                {
+                    "note": [
+                        "~"
+                    ]
+                }
+            ],
+            "scale": "D2:minor",
+            "sound": [
+                "sawtooth",
+                "triangle"
+            ],
+            "effects": {
+                "lpf": 800
+            }
+        },
+        {
+            "cycle": [
+                {
+                    "note": "~"
+                },
+                {
+                    "cycle": [
+                        {
+                            "brackets": [
+                                {
+                                    "parallel": {
+                                        "cycle": [
+                                            "d3",
+                                            "a3",
+                                            "f4"
+                                        ],
+                                        "multiplier": "!2"
+                                    }
+                                },
+                                {
+                                    "parallel": {
+                                        "cycle": [
+                                            "d3",
+                                            "bb3",
+                                            "g4"
+                                        ],
+                                        "multiplier": "!2"
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "note": "~"
+                        }
+                    ]
+                }
+            ],
+            "instrument": "gm_electric_guitar_muted",
+            "effects": {
+                "delay": 0.5
+            }
+        }
+    ]
+}

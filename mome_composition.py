@@ -449,6 +449,209 @@ def soft_focus_blur_outside_rect(params, current_inputs):
 
 
 
+def clouds1_fractal_noise(params, current_inputs):
+    """
+    Generates a classic fractal noise "clouds" image.
+
+    The function creates a grayscale image using fractal noise, with adjustable scale and disorder.
+    The output image size can be specified, defaulting to 1024x1024 pixels.
+
+    Args:
+        params (dict): Dictionary with optional keys:
+            - 'scale' (float): Controls the size of the noise features. Range: 1.0 (large) to 8.0 (small). Default is 4.0.
+            - 'disorder' (float): Controls the randomness/disorder of the noise. Range: 0.0 (smooth) to 1.0 (chaotic). Default is 0.5.
+            - 'width' (int): Output image width in pixels. Default is 1024.
+            - 'height' (int): Output image height in pixels. Default is 1024.
+            - 'seed' (int): Optional random seed for reproducibility.
+        current_inputs (list): Not used; included for interface compatibility.
+
+    Returns:
+        PIL.Image.Image: The generated fractal noise clouds image (mode 'L').
+        dict: Parameters used, including resolved scale, disorder, width, height, and seed.
+    """
+
+
+    # Parameter defaults
+    scale = float(params.get('scale', 4.0))
+    scale = max(1.0, min(8.0, scale))
+    disorder = float(params.get('disorder', 0.5))
+    disorder = max(0.0, min(1.0, disorder))
+    width = int(params.get('width', 1024))
+    height = int(params.get('height', 1024))
+    seed = params.get('seed', None)
+    if seed is not None:
+        np.random.seed(seed)
+        random.seed(seed)
+
+    # Fractal noise parameters
+    octaves = int(np.clip(scale, 1, 8))
+    persistence = 0.5 + 0.5 * disorder  # 0.5 (smooth) to 1.0 (chaotic)
+    lacunarity = 2.0
+
+    def perlin_noise(shape, res):
+        """Simple Perlin-like noise using numpy interpolation."""
+        def f(t):
+            return 6*t**5 - 15*t**4 + 10*t**3
+
+        delta = (res[0] / shape[0], res[1] / shape[1])
+        d = (shape[0] // res[0], shape[1] // res[1])
+        grid = np.stack(np.meshgrid(np.arange(res[0]+1), np.arange(res[1]+1)), axis=-1)
+        gradients = np.random.randn(res[0]+1, res[1]+1, 2)
+        gradients /= np.linalg.norm(gradients, axis=2, keepdims=True)
+        xs = np.linspace(0, res[0], shape[0], endpoint=False)
+        ys = np.linspace(0, res[1], shape[1], endpoint=False)
+        xi = xs.astype(int)
+        yi = ys.astype(int)
+        xf = xs - xi
+        yf = ys - yi
+        u = f(xf)
+        v = f(yf)
+        result = np.zeros(shape)
+        for i in range(2):
+            for j in range(2):
+                g = gradients[xi + i, yi + j]
+                dx = xf - i
+                dy = yf - j
+                dot = g[...,0]*dx + g[...,1]*dy
+                weight = ((1-u) if i==0 else u)[:,None] * ((1-v) if j==0 else v)
+                result += dot * weight
+        return result
+
+    # Generate fractal noise
+    noise = np.zeros((height, width), dtype=np.float32)
+    amplitude = 1.0
+    frequency = 1.0
+    max_amplitude = 0.0
+    for o in range(octaves):
+        res = (int(width // (2**o)), int(height // (2**o)))
+        res = (max(1, res[0]), max(1, res[1]))
+        n = perlin_noise((height, width), res)
+        noise += n * amplitude
+        max_amplitude += amplitude
+        amplitude *= persistence
+        frequency *= lacunarity
+
+    # Normalize to 0-255
+    noise = (noise - noise.min()) / (noise.max() - noise.min())
+    img = Image.fromarray((noise * 255).astype(np.uint8), mode='L')
+
+    return img, {
+        'scale': scale,
+        'disorder': disorder,
+        'width': width,
+        'height': height,
+        'seed': seed
+    }
+
+def classic_perlin(params, current_inputs):
+    """
+    Generates a 2D classic Perlin noise image using numpy for efficient computation.
+
+    Args:
+        params (dict): Dictionary with optional keys:
+            - 'scale' (float): Controls the frequency of the noise. Higher values = more detail. Default is 8.0.
+            - 'disorder' (float): Controls the randomness of the gradients. Default is 1.0.
+            - 'image_size' (int or tuple): Output image size as int (for square) or (width, height). Default is 1024.
+            - 'seed' (int): Optional random seed for reproducibility.
+
+        current_inputs (list): Not used, included for interface compatibility.
+
+    Returns:
+        PIL.Image.Image: Grayscale image of Perlin noise.
+        dict: Parameters used, including actual image size and seed.
+    """
+    import numpy as np
+    from PIL import Image
+
+    print('Computing perlin'*10)
+
+    # Parse parameters
+    scale = float(params.get('scale', 8.0))
+    disorder = float(params.get('disorder', 1.0))
+    image_size = params.get('image_size', 1024)
+    seed = params.get('seed', None)
+
+    # Determine image dimensions
+    if isinstance(image_size, int):
+        w, h = image_size, image_size
+    else:
+        w, h = int(image_size[0]), int(image_size[1])
+
+    # Set random seed if provided
+    rng = np.random.default_rng(seed)
+
+    # Helper functions for Perlin noise
+    def lerp(a, b, t):
+        return a + t * (b - a)
+
+    def fade(t):
+        return t * t * t * (t * (t * 6 - 15) + 10)
+
+    def gradient(h, x, y):
+        # 8 possible directions
+        vectors = np.array([[1,1],[-1,1],[1,-1],[-1,-1],[1,0],[-1,0],[0,1],[0,-1]])
+        g = vectors[h % 8]
+        return g[...,0]*x + g[...,1]*y
+
+    # Generate permutation table
+    perm = rng.integers(0, 256, size=256, dtype=np.int32)
+    perm = np.concatenate([perm, perm])
+
+    # Generate grid coordinates
+    linx = np.linspace(0, scale, w, endpoint=False)
+    liny = np.linspace(0, scale, h, endpoint=False)
+    x, y = np.meshgrid(linx, liny)
+
+    # Integer part of coordinates
+    xi = np.floor(x).astype(np.int32) & 255
+    yi = np.floor(y).astype(np.int32) & 255
+
+    # Fractional part
+    xf = x - np.floor(x)
+    yf = y - np.floor(y)
+
+    u = fade(xf)
+    v = fade(yf)
+
+    # Hash coordinates of the 4 corners
+    aa = perm[perm[xi    ] + yi    ]
+    ab = perm[perm[xi    ] + yi + 1]
+    ba = perm[perm[xi + 1] + yi    ]
+    bb = perm[perm[xi + 1] + yi + 1]
+
+    # Add disorder to gradients
+    disorder_scale = max(0.0, float(disorder))
+    def grad(h, x, y):
+        return gradient(h, x, y) + disorder_scale * (rng.random(x.shape) - 0.5)
+
+    # Calculate gradients at corners
+    n00 = grad(aa, xf    , yf    )
+    n01 = grad(ab, xf    , yf - 1)
+    n10 = grad(ba, xf - 1, yf    )
+    n11 = grad(bb, xf - 1, yf - 1)
+
+    # Interpolate
+    x1 = lerp(n00, n10, u)
+    x2 = lerp(n01, n11, u)
+    noise = lerp(x1, x2, v)
+
+    # Normalize to [0,255]
+    noise_min = noise.min()
+    noise_max = noise.max()
+    norm_noise = (noise - noise_min) / (noise_max - noise_min + 1e-8)
+    img_array = (norm_noise * 255).astype(np.uint8)
+
+    img = Image.fromarray(img_array, mode='L')
+    return img, {
+        'scale': scale,
+        'disorder': disorder,
+        'image_size': (w, h),
+        'seed': seed
+    }
+
+
+
+
 
 def resize_stage(stage, current_image):
     """
@@ -698,45 +901,234 @@ def overlay_stage(stage, current_inputs):
 
     return composite, meta
 
-
-
-def compose(stages, base_image=None):
+def warp_stage(stage, current_inputs):
     """
-    Compose an image from a list of stage dicts.
-    Each stage dict must have a 'type' key: 'image', 'text', 'bars', etc.
+    Warps an input image by displacing its pixels according to the slopes of a gradient image,
+    scaled by an intensity factor.
+
+    Args:
+        stage (dict): Should contain:
+            - 'input': node id of the image to be warped (required)
+            - 'gradient': node id of the gradient image (required)
+            - 'intensity': float, scaling factor for the displacement (default: 1.0)
+            - 'resize_gradient': bool, whether to resize gradient to input image size (default: True)
+        current_inputs (list): List of dicts (with keys 'id', 'image', 'meta') containing parent images.
+
+    Returns:
+        (PIL.Image.Image, dict): The warped image, and metadata.
     """
-    current_image = None
-    last_text_info = None
+    from PIL import Image
+    import numpy as np
 
-    for stage in stages:
-        stage_type = stage['type']
-        if stage_type == 'image':
-            current_image = load_image_stage(stage, current_image)
-        elif stage_type == 'text':
-            current_image, last_text_info = add_text(stage, current_image)
-        elif stage_type == 'bars':
-            if last_text_info is None:
-                raise ValueError("No previous text info for bars placement.")
-            current_image = bars_stage(stage, current_image, last_text_info)
-        elif stage_type == "vhs_scanline": 
-            current_image = vhs_scanline(stage, current_image)
-        elif stage_type == "blur": 
-            current_image= soft_focus_blur(stage, current_image)
-        elif stage_type == "vhs_grain": 
-            current_image = vhs_grain(stage, current_image)
-        elif stage_type == "resize": 
-            current_image = resize_stage(stage, current_image)
-        elif stage_type == "crop": 
-            current_image = crop_stage(stage, current_image)
-        elif stage_type == "overlay": 
-            current_image = overlay_stage(stage, current_image)
-        elif stage_type == "raw": 
-            current_image = stage['pil_image']
-        else:
-            raise ValueError(f"Unknown stage type: {stage_type}")
+    input_id = stage['input']
+    gradient_id = stage['gradient']
+    intensity = stage.get('intensity', 1.0)
+    resize_gradient = stage.get('resize_gradient', True)
 
-    return current_image
+    input_image = None
+    gradient_image = None
 
+    for parent in current_inputs:
+        if parent['id'] == input_id:
+            input_image = parent['image']
+        elif parent['id'] == gradient_id:
+            gradient_image = parent['image']
+        if input_image and gradient_image:
+            break
+
+    if input_image is None:
+        raise ValueError(f"Input image id '{input_id}' not found in current_inputs.")
+    if gradient_image is None:
+        raise ValueError(f"Gradient image id '{gradient_id}' not found in current_inputs.")
+
+    input_image = input_image.convert('RGBA')
+    if resize_gradient:
+        gradient_image = gradient_image.resize(input_image.size, Image.BILINEAR)
+    else:
+        if gradient_image.size != input_image.size:
+            raise ValueError("Gradient image size must match input image size or set 'resize_gradient' to True.")
+
+    # Convert images to numpy arrays
+    input_np = np.array(input_image)
+    grad_np = np.array(gradient_image.convert('L'))  # Use luminance for gradient
+
+    # Compute gradients (slopes) using Sobel operator
+    from scipy.ndimage import sobel
+
+    grad_x = sobel(grad_np, axis=1, mode='reflect')
+    grad_y = sobel(grad_np, axis=0, mode='reflect')
+
+    # Normalize gradients to [-1, 1]
+    grad_x = grad_x / (np.max(np.abs(grad_x)) + 1e-8)
+    grad_y = grad_y / (np.max(np.abs(grad_y)) + 1e-8)
+
+    # Scale by intensity
+    dx = grad_x * intensity
+    dy = grad_y * intensity
+
+    # Generate meshgrid of coordinates
+    h, w = grad_np.shape
+    x, y = np.meshgrid(np.arange(w), np.arange(h))
+    map_x = (x + dx).clip(0, w - 1)
+    map_y = (y + dy).clip(0, h - 1)
+
+    # Remap pixels using bilinear interpolation
+    def bilinear_remap(img, map_x, map_y):
+        from scipy.ndimage import map_coordinates
+        remapped = np.zeros_like(img)
+        for c in range(img.shape[2]):
+            remapped[..., c] = map_coordinates(img[..., c], [map_y, map_x], order=1, mode='reflect')
+        return remapped
+
+    warped_np = bilinear_remap(input_np, map_x, map_y)
+    warped_img = Image.fromarray(np.uint8(warped_np))
+
+    meta = {
+        'input': input_id,
+        'gradient': gradient_id,
+        'intensity': intensity,
+        'resize_gradient': resize_gradient
+    }
+    return (warped_img, meta)
+
+
+# def compose(stages, base_image=None):
+#     """
+#     Compose an image from a list of stage dicts.
+#     Each stage dict must have a 'type' key: 'image', 'text', 'bars', etc.
+#     """
+#     current_image = None
+#     last_text_info = None
+
+#     for stage in stages:
+#         stage_type = stage['type']
+#         if stage_type == 'image':
+#             current_image = load_image_stage(stage, current_image)
+#         elif stage_type == 'text':
+#             current_image, last_text_info = add_text(stage, current_image)
+#         elif stage_type == 'bars':
+#             if last_text_info is None:
+#                 raise ValueError("No previous text info for bars placement.")
+#             current_image = bars_stage(stage, current_image, last_text_info)
+#         elif stage_type == "vhs_scanline": 
+#             current_image = vhs_scanline(stage, current_image)
+#         elif stage_type == "blur": 
+#             current_image= soft_focus_blur(stage, current_image)
+#         elif stage_type == "vhs_grain": 
+#             current_image = vhs_grain(stage, current_image)
+#         elif stage_type == "resize": 
+#             current_image = resize_stage(stage, current_image)
+#         elif stage_type == "crop": 
+#             current_image = crop_stage(stage, current_image)
+#         elif stage_type == "overlay": 
+#             current_image = overlay_stage(stage, current_image)
+#         elif stage_type == "raw": 
+#             current_image = stage['pil_image']
+#         else:
+#             raise ValueError(f"Unknown stage type: {stage_type}")
+
+#     return current_image
+
+
+# def compose(source_folder, G, outputs=None, base_image=None, cache=None, invalidate=True):
+#     """
+#     Incremental DAG execution with caching and content-hash validation.
+
+#     Cache structure:
+#         cache[node_id] = (image, meta, content_hash)
+#     """
+
+#     if not isinstance(G, nx.DiGraph):
+#         raise TypeError("compose expects a networkx.DiGraph")
+
+#     if cache is None:
+#         cache = {}
+
+#     # Resolve targets
+#     if outputs is None:
+#         target_nodes = {n for n in G.nodes if G.out_degree(n) == 0}
+#         if not target_nodes:
+#             raise ValueError("No sink nodes found; specify outputs explicitly or ensure the graph is a DAG with sinks.")
+#     else:
+#         target_nodes = set(outputs)
+#         missing = [n for n in target_nodes if n not in G]
+#         if missing:
+#             raise KeyError(f"Requested output nodes not present in the graph: {missing}")
+
+#     # Induced subgraph (only what we need for targets)
+#     required_nodes: set = set()
+#     for out in target_nodes:
+#         required_nodes.add(out)
+#         required_nodes.update(nx.ancestors(G, out))
+#     H = G.subgraph(required_nodes).copy()
+
+#     # --- Invalidate nodes outside required subgraph ---
+#     if invalidate:
+#         for nid in list(cache.keys()):
+#             if nid not in H.nodes:
+#                 print('Removing from cache,', nid)
+#                 cache.pop(nid, None)
+
+#     # Topological order
+#     topo = list(nx.topological_sort(H))
+
+#     # --- Core execution ---
+#     for n in topo:
+#         node_attrs = H.nodes[n]
+#         if "node_content" not in node_attrs:
+#             raise KeyError(f"Node {n!r} is missing 'node_content' attribute.")
+
+#         node_content = node_attrs["node_content"]
+
+
+#         print("node_content before hash: {}".format(node_content.strip()))
+#         # cleaning node_content for hash by only selecting structured data 
+#         try: 
+#             node_content_for_hash = momeutils.parse_json(node_content)
+#         except Exception as e: 
+#             node_content_for_hash = node_content
+#         print("node_content for hash: {}".format(node_content_for_hash))
+
+#         content_hash = _hash_content(node_content_for_hash)
+
+#         # Reuse only if cached content matches
+#         if n in cache and cache[n][2] == content_hash and n not in outputs:
+#             print('Skipping node ', n)
+#             if n in outputs: 
+#                 print('I should not have skipped')
+#             continue
+#         else: 
+#             if n in cache: 
+#                 print(node_content.strip())
+#                 print('Content hash problem', n, content_hash, cache[n][2])
+#                 # input(' ok ? ')
+#             momeutils.crline(f'Computation to run for node {n}')
+
+#         # Build inputs
+#         parent_ids = sorted(H.predecessors(n), key=lambda x: str(x))
+#         inputs = [
+#             {"id": pid, "image": cache[pid][0], "meta": cache[pid][1]}
+#             for pid in parent_ids
+#         ]
+
+#         # Execute node
+#         image, meta = execute_node(source_folder, n, node_content, inputs, base_image)
+#         if meta is None:
+#             meta = {}
+#         elif not isinstance(meta, dict):
+#             raise TypeError(f"execute_node must return a dict for meta; got {type(meta)} at node {n!r}.")
+
+#         cache[n] = (image, meta, content_hash)
+
+#     # Collect outputs
+#     final_nodes = list(target_nodes) if outputs is not None else [n for n in H.nodes if H.out_degree(n) == 0]
+#     result = {nid: cache[nid][0] for nid in final_nodes}
+
+
+#     return result, cache
+
+
+# If a parent node is modified, the results must also be returned, even if it wasn't originally part of 'outputs'
 
 def compose(source_folder, G, outputs=None, base_image=None, cache=None, invalidate=True):
     """
@@ -744,8 +1136,11 @@ def compose(source_folder, G, outputs=None, base_image=None, cache=None, invalid
 
     Cache structure:
         cache[node_id] = (image, meta, content_hash)
-    """
 
+    Returns:
+        result: dict mapping node_id to image for all requested outputs and any recomputed parent nodes.
+        cache: updated cache.
+    """
     if not isinstance(G, nx.DiGraph):
         raise TypeError("compose expects a networkx.DiGraph")
 
@@ -780,6 +1175,9 @@ def compose(source_folder, G, outputs=None, base_image=None, cache=None, invalid
     # Topological order
     topo = list(nx.topological_sort(H))
 
+    # Track recomputed nodes
+    recomputed_nodes = set()
+
     # --- Core execution ---
     for n in topo:
         node_attrs = H.nodes[n]
@@ -788,8 +1186,7 @@ def compose(source_folder, G, outputs=None, base_image=None, cache=None, invalid
 
         node_content = node_attrs["node_content"]
 
-
-        print("node_content before hash: {}".format(node_content))
+        print("node_content before hash: {}".format(node_content.strip()))
         # cleaning node_content for hash by only selecting structured data 
         try: 
             node_content_for_hash = momeutils.parse_json(node_content)
@@ -800,15 +1197,18 @@ def compose(source_folder, G, outputs=None, base_image=None, cache=None, invalid
         content_hash = _hash_content(node_content_for_hash)
 
         # Reuse only if cached content matches
-        if n in cache and cache[n][2] == content_hash:
+        if n in cache and cache[n][2] == content_hash and n not in outputs:
             print('Skipping node ', n)
+            if n in outputs: 
+                print('I should not have skipped')
             continue
         else: 
             if n in cache: 
-                print(node_content)
+                print(node_content.strip())
                 print('Content hash problem', n, content_hash, cache[n][2])
                 # input(' ok ? ')
             momeutils.crline(f'Computation to run for node {n}')
+            recomputed_nodes.add(n)  # Mark as recomputed
 
         # Build inputs
         parent_ids = sorted(H.predecessors(n), key=lambda x: str(x))
@@ -826,13 +1226,76 @@ def compose(source_folder, G, outputs=None, base_image=None, cache=None, invalid
 
         cache[n] = (image, meta, content_hash)
 
-    # Collect outputs
-    final_nodes = list(target_nodes) if outputs is not None else [n for n in H.nodes if H.out_degree(n) == 0]
+    # Collect outputs: all requested outputs + all recomputed nodes
+    final_nodes = set(target_nodes) | recomputed_nodes
     result = {nid: cache[nid][0] for nid in final_nodes}
-
 
     return result, cache
 
+
+def blend_overlay_stage(stage, current_inputs):
+    """
+    Blends two images using a grayscale map as the blend factor.
+
+    Args:
+        stage (dict): Should contain:
+            - 'top': node id of the top image (required)
+            - 'bottom': node id of the bottom image (required)
+            - 'map': node id of the grayscale blend map (required)
+        current_inputs (list): List of dicts (with keys 'id', 'image', 'meta') containing parent images.
+
+    Returns:
+        (PIL.Image.Image, dict): The blended image and metadata.
+    """
+    top_id = stage['top']
+    bottom_id = stage['bottom']
+    map_id = stage['map']
+
+    top_image = None
+    bottom_image = None
+    map_image = None
+
+    for parent in current_inputs:
+        if parent['id'] == top_id:
+            top_image = parent['image']
+        elif parent['id'] == bottom_id:
+            bottom_image = parent['image']
+        elif parent['id'] == map_id:
+            map_image = parent['image']
+        if top_image and bottom_image and map_image:
+            break
+
+    if top_image is None:
+        raise ValueError(f"Top image id '{top_id}' not found in current_inputs.")
+    if bottom_image is None:
+        raise ValueError(f"Bottom image id '{bottom_id}' not found in current_inputs.")
+    if map_image is None:
+        raise ValueError(f"Map image id '{map_id}' not found in current_inputs.")
+
+    # Ensure all images are the same size
+    size = bottom_image.size
+    if top_image.size != size:
+        top_image = top_image.resize(size, Image.LANCZOS)
+    if map_image.size != size:
+        map_image = map_image.resize(size, Image.LANCZOS)
+
+    # Convert images to RGBA
+    top_rgba = top_image.convert('RGBA')
+    bottom_rgba = bottom_image.convert('RGBA')
+    # Convert map to single-channel grayscale
+    blend_map = map_image.convert('L')
+
+    # Prepare alpha mask from blend map
+    # The blend map acts as the alpha for the top image
+    # 0 = only bottom, 255 = only top
+    blended = Image.composite(top_rgba, bottom_rgba, blend_map)
+
+    meta = {
+        'top': top_id,
+        'bottom': bottom_id,
+        'map': map_id
+    }
+    return (blended, meta)
 
 
 def execute_node(source_folder, node_id, node_contents, current_inputs, base_image = None): 
@@ -903,12 +1366,13 @@ def produce_composition(data_path, selected_ids):
         pickle.dump(cached, f)
 
     for k in results.keys(): 
+        print(f'Results for node {k}')
         final_path = os.path.join(img_source_folder, f"interm_{k}.png")
         results[k].save(final_path)
         for n in data['nodes']: 
             if n['id'] == k: 
-                n['text'] = re.sub(r'!\[\[.*?\]\]', '', n['text'])
-                n['text'] += f"\n\n\n![[{os.path.basename(final_path)}]]"
+                n['text'] = re.sub(r'!\[\[.*?\]\]', '', n['text']).strip()
+                n['text'] += f"\n\n![[{os.path.basename(final_path)}]]"
         _safe_close_image(results[k])
     
     results.clear()

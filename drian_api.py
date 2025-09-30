@@ -37,6 +37,18 @@ def receive_canvas_path():
     #     return jsonify({'error': str(e)}), 500
 
 
+@app.route("/mOmEdRiAn/menu_items", methods = ["GET"])
+def menu_items(): 
+    d = [
+    { "title": "Process Canvas", "content": "```json\n{\n    \"node_id\": \"european_project_major_role\",\n    \"desc\": \"european_project_major_role\",\n    \"modifications\": {\n        \"transferable_expertise\": 5,\n        \"industry_credibility\": 5\n    },\n    \"children\": [\n        {\n            \"prob\": 1,\n            \"child\": \"european_project_major_role_outcome\"\n        }\n    ]\n}\n```" },
+    { "title": "Analyze All Nodes", "content": "```json\n{\n    \"node_id\": \"european_project_major_role\",\n    \"desc\": \"european_project_major_role\",\n    \"modifications\": {\n        \"transferable_expertise\": 5,\n        \"industry_credibility\": 5\n    },\n    \"children\": [\n        {\n            \"prob\": 1,\n            \"child\": \"european_project_major_role_outcome\"\n        }\n    ]\n}\n```" },
+    { "title": "Export Canvas Data", "content": "```json\n{\n    \"node_id\": \"european_project_major_role\",\n    \"desc\": \"european_project_major_role\",\n    \"modifications\": {\n        \"transferable_expertise\": 5,\n        \"industry_credibility\": 5\n    },\n    \"children\": [\n        {\n            \"prob\": 1,\n            \"child\": \"european_project_major_role_outcome\"\n        }\n    ]\n}\n```" }
+]
+    for i in range(200): 
+         d.append({"title": "Test {}".format(i), "content": "This is a test"})
+
+    return jsonify(d)
+
 @app.route('/health', methods=['GET'])
 def health_check():
     return jsonify({'status': 'healthy', 'message': 'Python server is running'})

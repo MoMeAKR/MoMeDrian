@@ -20,6 +20,18 @@
     },
     "blur_outside": {
         "function": "soft_focus_blur_outside_rect"
+    },
+    "clouds1": {
+        "function": "clouds1_fractal_noise"
+    }, 
+    "perlin": {
+        "function": "classic_perlin"
+    }, 
+    "wrap": {
+        "function": "warp_stage"
+    }, 
+    "blend_overlay": {
+        "function": "blend_overlay_stage"
     }
     
 }

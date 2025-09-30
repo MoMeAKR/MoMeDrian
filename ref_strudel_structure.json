@@ -1,0 +1,80 @@
+
+
+{
+    "drums": {
+        "content": [
+            {
+                "parallel": [
+                    {
+                        "cycle": [
+                            {"note": ["bd"], "scale": 4}
+                        ]
+                    },
+                    {
+                        "cycle": [
+                            {
+                                "brackets": [
+                                    "~",
+                                    {
+                                        "brackets": [
+                                            {"note": ["sd", "cp"]}
+                                        ]
+                                    }
+                                ],
+                                "scale": 2
+                            }
+                        ]
+                    },
+                    {
+                        "cycle": [
+                            {
+                                "brackets": [
+                                    "~",
+                                    {"note": ["hh"]}
+                                ],
+                                "scale": 4
+                            }
+                        ]
+                    }
+                ],
+                "bank": "RolandTR909"
+            }
+        ]
+    },
+    "melody": {
+        "content": [
+            {
+                "cycle": [
+                    {
+                        "brackets": [
+                            {"note": ["c2", "c3"]},
+                            "scale:4"
+                        ]
+                    },
+                    {
+                        "brackets": [
+                            {"note": ["bb1", "bb2"]},
+                            "scale:4"
+                        ]
+                    },
+                    {
+                        "brackets": [
+                            {"note": ["f2", "f3"]},
+                            "scale:4"
+                        ]
+                    },
+                    {
+                        "brackets": [
+                            {"note": ["eb2", "eb3"]},
+                            "scale:4"
+                        ]
+                    }
+                ],
+                "instrument": "gm_synth_bass_1",
+                "effects": {
+                    "lpf": 800
+                }
+            }
+        ]
+    }
+}
